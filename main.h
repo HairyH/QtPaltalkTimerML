@@ -16,13 +16,21 @@
 #include <windows.h>
 #include <CommCtrl.h>
 #include <stdio.h>
-
+#include <iostream>
 // C RunTime Header Files
 #include <stdlib.h>
 #include <malloc.h>
 #include <memory.h>
 #include <tchar.h>
 #include <Richedit.h>
+#include <string>
+
+// UIAutomation
+#include <UIAutomation.h>
+#include <atlbase.h> // For CComPtr
+#include <cctype> // For std::iswlower and std::iswupper
+#include <iterator> // Add this include for std::begin and std::end
+#include <cwctype> // Add this include for std::iswlower and std::iswupper
 
 // Resource Header
 #include "resource1.h"
@@ -36,8 +44,8 @@ processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
 
 // TODO: Change these to the App name 
-char szAppName[] = "Win32DialogProject";
-wchar_t wcAppName[] = L"Win32DialogProject";
+char szAppName[] = "QtPaltalk Timer";
+wchar_t wcAppName[] = L"QtPaltalk Timer";
 
 #define msgba(h,x) MessageBoxA(h,x,szAppName,MB_OK)
 #define msgbw(h,x) MessageBoxW(h,x,wcAppName,MB_OK)

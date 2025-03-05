@@ -1,9 +1,10 @@
 
 /*********************************/
-/* (c) HairyH 2020               */
+/* (c) HairyH 2025               */
 /*********************************/
 #include "main.h"
 
+using namespace std;
 #undef DEBUG
 //#define DEBUG
 
@@ -37,6 +38,8 @@ char gszSavedNick[MAX_PATH] = { '0' };
 char gszCurrentNick[MAX_PATH] = { '0' };
 int iMaxNicks = 0;
 int iDrp = 0;
+// UIAutomation related globals
+IUIAutomationElement* emojiTextEditElement = nullptr;
 
 //Quick Messagebox macro
 #define msga(x) msgba(ghMain,x)
@@ -56,8 +59,9 @@ void MicTimerStart(void);
 void MicTimerReset(void);
 void MicTimerTick(void);
 void MonitorTimerTick(void);
-
+wstring ConvertToBold(const wstring& inString);
 void CopyPaste2Paltalk(char* szMsg);
+HRESULT __stdcall GetUIAutomationElementFromHWNDAndClassName(HWND hwnd, const wchar_t* className, IUIAutomationElement** foundElement);
 
 /// Main entry point of the app 
 int APIENTRY WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPSTR lpCmdLine, _In_ int nShowCmd)
@@ -89,6 +93,10 @@ BOOL CALLBACK DlgMain(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 	break; // return TRUE;
 	case WM_CLOSE:
 	{
+		if (emojiTextEditElement)
+			emojiTextEditElement->Release();
+		CoUninitialize();
+		if (ghFntClk)
 		DeleteObject(ghFntClk);
 		EndDialog(hwndDlg, 0);
 	}
@@ -178,7 +186,17 @@ void GetPaltalkWindows(void)
 
 	// Getting the chat room window handle
 	ghPtRoom = FindWindowW(L"DlgGroupChat Window Class", 0); // this is to find nick list
+	if (GetWindowTextA(ghPtRoom, szTitle, 254) < 1)
+	{
+		msga("No Paltalk Room Found!");
+		return ;
+	}
+	// Getting the main Paltalk window handle
 	ghPtMain = FindWindowW(L"Qt5150QWindowIcon", 0);  // this is to send text 
+	HRESULT hr = GetUIAutomationElementFromHWNDAndClassName(ghPtMain, L"ui::controls::EmojiTextEdit", &emojiTextEditElement);
+	if (FAILED(hr)) {
+		std::cerr << "GetUIAutomationElementFromHWNDAndClassName failed: " << std::hex << hr << std::endl;
+	}
 
 	if (ghPtRoom) // we got it
 	{
@@ -521,21 +539,127 @@ void StartStopMonitoring(void)
 void CopyPaste2Paltalk(char* szMsg)
 {
 	char szOut[MAX_PATH] = { '\0' };
-	
+	wchar_t wcOut[MAX_PATH] = { '\0' };
+	HRESULT hr = S_OK;
+
 	if (strlen(gszCurrentNick) < 2) return;
 	else if (SendMessageA(ghCbSend, BM_GETCHECK, (WPARAM)0, (LPARAM)0) != BST_CHECKED) return;
 
-	BOOL bRes = SetForegroundWindow(ghPtMain);
-	Sleep(500);
-
-	sprintf_s(szOut, MAX_PATH, "*** %s ***", szMsg);
-
-	for (int i = 0; i < strlen(szOut); i++)
-	{
-		SendMessageA(ghPtMain, WM_CHAR, (WPARAM)szOut[i], 0);
+	BSTR bstEmojiText = nullptr;
+	CComPtr<IUIAutomationLegacyIAccessiblePattern> pattern;
+	hr = emojiTextEditElement->GetCurrentPatternAs(UIA_LegacyIAccessiblePatternId, IID_IUIAutomationLegacyIAccessiblePattern, (void**)&pattern);
+	//GetCurrentPatternAs(UIA_ValuePatternId, IID_PPV_ARGS(&pattern));
+	if (SUCCEEDED(hr)) {
+		sprintf_s(szOut, MAX_PATH, "*** %s ***", szMsg);
+		MultiByteToWideChar(CP_ACP, 0, szOut, -1, wcOut, MAX_PATH);
+		wstring wstrOutBold = ConvertToBold(wcOut);
+		BSTR bstrOut = SysAllocString(wstrOutBold.c_str());
+		emojiTextEditElement->SetFocus();
+		pattern->SetValue(bstrOut);
+		SendMessageA(ghPtMain, WM_KEYDOWN, (WPARAM)VK_RETURN, 0);
+		SendMessageA(ghPtMain, WM_KEYUP, (WPARAM)VK_RETURN, 0);
+		SysFreeString(bstrOut);
 	}
-	SendMessageA(ghPtMain, WM_KEYDOWN, (WPARAM)VK_RETURN, 0);
-	SendMessageA(ghPtMain, WM_KEYUP, (WPARAM)VK_RETURN, 0);
-
+	else {
+		std::cerr << "GetCurrentPatternAs failed: " << std::hex << hr << std::endl;
+	}
+	
 }
+
+/// Convert the string to bold
+wstring ConvertToBold(const wstring& inString) {
+	const int boldLowercaseOffset = 119737; // 'a' to bold 'a'
+	const int boldUppercaseOffset = 119743; // 'A' to bold 'A'
+	const int boldDigitOffset = 120734;      // '0' to bold '0'
+
+	wstring result;
+
+	for (wchar_t c : inString) {
+		if (iswlower(c)) { // Lowercase letters
+			DWORD codePoint = c + boldLowercaseOffset;
+			if (codePoint <= 0xFFFF) {
+				result += static_cast<wchar_t>(codePoint);
+			}
+			else {
+				// Handle surrogate pairs for Unicode characters above U+FFFF
+				wchar_t highSurrogate = (wchar_t)(0xD800 + (codePoint - 0x10000) / 0x400);
+				wchar_t lowSurrogate = (wchar_t)(0xDC00 + (codePoint - 0x10000) % 0x400);
+				result += highSurrogate;
+				result += lowSurrogate;
+			}
+		}
+		else if (iswupper(c)) { // Uppercase letters
+			DWORD codePoint = c + boldUppercaseOffset;
+			if (codePoint <= 0xFFFF) {
+				result += static_cast<wchar_t>(codePoint);
+			}
+			else {
+				wchar_t highSurrogate = (wchar_t)(0xD800 + (codePoint - 0x10000) / 0x400);
+				wchar_t lowSurrogate = (wchar_t)(0xDC00 + (codePoint - 0x10000) % 0x400);
+				result += highSurrogate;
+				result += lowSurrogate;
+			}
+		}
+		else if (iswdigit(c)) { // Digits
+			DWORD codePoint = c + boldDigitOffset;
+			if (codePoint <= 0xFFFF) {
+				result += static_cast<wchar_t>(codePoint);
+			}
+			else {
+				wchar_t highSurrogate = (wchar_t)(0xD800 + (codePoint - 0x10000) / 0x400);
+				wchar_t lowSurrogate = (wchar_t)(0xDC00 + (codePoint - 0x10000) % 0x400);
+				result += highSurrogate;
+				result += lowSurrogate;
+			}
+		}
+		else {
+			result += c;
+		}
+	}
+
+	return result;
+}
+
+HRESULT __stdcall GetUIAutomationElementFromHWNDAndClassName(HWND hwnd, const wchar_t* className, IUIAutomationElement** foundElement) {
+	HRESULT hr = CoInitialize(NULL);
+	if (FAILED(hr)) {
+		std::cerr << "CoInitialize failed: " << std::hex << hr << std::endl;
+		return hr;
+	}
+
+	CComPtr<IUIAutomation> automation;
+	hr = CoCreateInstance(__uuidof(CUIAutomation), NULL, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&automation));
+	if (FAILED(hr)) {
+		std::cerr << "CoCreateInstance failed: " << std::hex << hr << std::endl;
+		CoUninitialize();
+		return hr;
+	}
+
+	CComPtr<IUIAutomationElement> element;
+	hr = automation->ElementFromHandle(hwnd, &element);
+	if (FAILED(hr)) {
+		std::cerr << "ElementFromHandle failed: " << std::hex << hr << std::endl;
+		CoUninitialize();
+		return hr;
+	}
+
+	CComPtr<IUIAutomationCondition> classNameCondition;
+	CComVariant classNameVariant(className);
+	hr = automation->CreatePropertyCondition(UIA_ClassNamePropertyId, classNameVariant, &classNameCondition);
+	if (FAILED(hr)) {
+		std::cerr << "CreatePropertyCondition failed: " << std::hex << hr << std::endl;
+		CoUninitialize();
+		return hr;
+	}
+
+	hr = element->FindFirst(TreeScope_Subtree, classNameCondition, foundElement);
+	if (FAILED(hr)) {
+		std::cerr << "FindFirst failed: " << std::hex << hr << std::endl;
+		CoUninitialize();
+		return hr;
+	}
+
+	return S_OK;
+}
+
 
