@@ -29,6 +29,7 @@ SYSTEMTIME gsysTime = { 0 };
 BOOL gbMonitor = FALSE;
 BOOL gbSendTxt = TRUE;
 BOOL gbSendLimit = FALSE;
+BOOL gbSendBold = TRUE;
 
 int giMicTimerSeconds = 0;
 int giInterval = 30;
@@ -89,6 +90,8 @@ BOOL CALLBACK DlgMain(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		InitIntervals();
 		InitMicLimits();
 		SendDlgItemMessageW(hwndDlg, IDC_CHECK1, BM_SETCHECK, (WPARAM)BST_CHECKED, 0);
+		SendDlgItemMessageW(hwndDlg, IDC_CHECK3, BM_SETCHECK, (WPARAM)BST_CHECKED, 0);
+
 	}
 	break; // return TRUE;
 	case WM_CLOSE:
@@ -131,6 +134,11 @@ BOOL CALLBACK DlgMain(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 					gbSendLimit = IsDlgButtonChecked(ghMain, IDC_CHECK2);
 				}
 				return TRUE;
+			case IDC_CHECK3: // Send Bold text to Paltalk
+			{
+				gbSendBold = IsDlgButtonChecked(ghMain, IDC_CHECK3);
+			}
+			return TRUE;
 			case IDC_COMBO_INTERVAL:
 				{
 					if (HIWORD(wParam) == CBN_SELCHANGE)
@@ -543,17 +551,23 @@ void CopyPaste2Paltalk(char* szMsg)
 	HRESULT hr = S_OK;
 
 	if (strlen(gszCurrentNick) < 2) return;
-	else if (SendMessageA(ghCbSend, BM_GETCHECK, (WPARAM)0, (LPARAM)0) != BST_CHECKED) return;
+	else if (!gbSendTxt) return; // SendMessageA(ghCbSend, BM_GETCHECK, (WPARAM)0, (LPARAM)0) != BST_CHECKED
 
-	BSTR bstEmojiText = nullptr;
 	CComPtr<IUIAutomationLegacyIAccessiblePattern> pattern;
 	hr = emojiTextEditElement->GetCurrentPatternAs(UIA_LegacyIAccessiblePatternId, IID_IUIAutomationLegacyIAccessiblePattern, (void**)&pattern);
 	//GetCurrentPatternAs(UIA_ValuePatternId, IID_PPV_ARGS(&pattern));
 	if (SUCCEEDED(hr)) {
+		BSTR bstrOut = NULL;
+	
 		sprintf_s(szOut, MAX_PATH, "*** %s ***", szMsg);
 		MultiByteToWideChar(CP_ACP, 0, szOut, -1, wcOut, MAX_PATH);
-		wstring wstrOutBold = ConvertToBold(wcOut);
-		BSTR bstrOut = SysAllocString(wstrOutBold.c_str());
+		if (gbSendBold) {
+			wstring wstrOutBold = ConvertToBold(wcOut);
+			 bstrOut = SysAllocString(wstrOutBold.c_str());
+		}
+		else {
+			bstrOut = SysAllocString(wcOut);
+		}
 		emojiTextEditElement->SetFocus();
 		pattern->SetValue(bstrOut);
 		SendMessageA(ghPtMain, WM_KEYDOWN, (WPARAM)VK_RETURN, 0);
@@ -663,3 +677,4 @@ HRESULT __stdcall GetUIAutomationElementFromHWNDAndClassName(HWND hwnd, const wc
 }
 
 
+// End of File
